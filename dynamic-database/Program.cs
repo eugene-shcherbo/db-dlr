@@ -17,10 +17,9 @@ namespace dynamic_database
                 return;
             }
 
-            dynamic database = new Database(connectioString);
-            Action helloWorld = () => { Console.WriteLine("Hello World"); };
-            database.HelloWorld = helloWorld;
-            database.HelloWorld();
+            using dynamic db = new Database(connectioString);
+            db.Connect();
+            Console.WriteLine(db.Books);
         }
 
         static IConfigurationRoot CreateConfig()

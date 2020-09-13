@@ -1,22 +1,39 @@
 ﻿using System;
 using System.Dynamic;
 using System.Data.SqlClient;
+using System.Data;
 
 namespace dynamic_database
 {
-    public class Database : DynamicObject
+    public sealed class Database : DynamicObject, IDisposable
     {
-        private readonly string connectionString;
+        bool _disposed;
+        readonly string _connectionString;
+        SqlConnection _connection;
 
         public Database(string connectionString)
         {
-            this.connectionString = connectionString;
-            TestConnection();
+            _connectionString = connectionString;
+            _disposed = false;
+        }
+
+        public void Connect()
+        {
+            _connection = new SqlConnection(_connectionString);
+            _connection.Open();
+        }
+
+        public void Dispose()
+        {
+            if (!_disposed)
+            {
+                _connection.Close();
+                _disposed = true;
+            }
         }
 
         public override bool TryInvokeMember(InvokeMemberBinder binder, object[] args, out object result)
         {
-            Console.WriteLine("member invoked");
             result = null;
             return true;
         }
@@ -27,16 +44,26 @@ namespace dynamic_database
             return true;
         }
 
-        private void TestConnection()
+        public override bool TryGetMember(GetMemberBinder binder, out object result)
         {
-            using (var conn = new SqlConnection(connectionString))
-            {
-                conn.Open();
-                Console.WriteLine("Connected successfully.");
+            DataTable schema = _connection.GetSchema("Tables");
+            result = null; // TODO: create my own table type which inherits from DynamicObject 
+            return IsThereTableWithName(schema, binder.Name);
+        }
 
-                Console.WriteLine("Press any key to finish...");
-                Console.ReadKey(true);
+        private bool IsThereTableWithName(DataTable schema, string tableName)
+        {
+            DataColumn nameCol = schema.Columns[2];
+
+            foreach (DataRow row in schema.Rows)
+            {
+                if ((string)row[nameCol] == tableName)
+                {
+                    return true;
+                }
             }
+
+            return false;
         }
     }
 }
