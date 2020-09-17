@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using Microsoft.Extensions.Configuration;
 
@@ -19,7 +20,8 @@ namespace dynamic_database
 
             using dynamic db = new Database(connectioString);
             db.Connect();
-            Console.WriteLine(db.Books);
+            dynamic res = db.Books.SearchById(1);
+            Console.WriteLine(res.Title);
         }
 
         static IConfigurationRoot CreateConfig()

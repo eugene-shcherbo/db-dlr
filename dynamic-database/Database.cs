@@ -5,6 +5,7 @@ using System.Data;
 
 namespace dynamic_database
 {
+    // TODO: think how I make it work with any data source easily
     public sealed class Database : DynamicObject, IDisposable
     {
         bool _disposed;
@@ -32,22 +33,10 @@ namespace dynamic_database
             }
         }
 
-        public override bool TryInvokeMember(InvokeMemberBinder binder, object[] args, out object result)
-        {
-            result = null;
-            return true;
-        }
-
-        public override bool TrySetMember(SetMemberBinder binder, object value)
-        {
-            Console.WriteLine("member set");
-            return true;
-        }
-
         public override bool TryGetMember(GetMemberBinder binder, out object result)
         {
             DataTable schema = _connection.GetSchema("Tables");
-            result = null; // TODO: create my own table type which inherits from DynamicObject 
+            result = new DbTable(_connection, binder.Name);
             return IsThereTableWithName(schema, binder.Name);
         }
 
@@ -64,6 +53,35 @@ namespace dynamic_database
             }
 
             return false;
+        }
+
+        private class DbTable : DynamicObject
+        {
+            SqlConnection _conn;
+            string _tableName;
+
+            public DbTable(SqlConnection conn, string tableName)
+            {
+                _conn = conn;
+                _tableName = tableName;
+            }
+
+            public override bool TryInvokeMember(InvokeMemberBinder binder, object[] args, out object result)
+            {
+                // TODO: Create a query parser which will parse query to the query objects (or maybe I can go with expression trees?)
+                // TODO: If I'm going to create query objects, think how to represent them (enum constants, classes etc)
+
+                // TODO: How to represent a result of operation?
+                // 1. I might have a class for each table
+                // 2. I might have a delegate or something to create a result for each table
+                // 3. It might be fully dynamic (result is created fron an anonymous type and client will use it as a dynamic variable)
+
+                Console.WriteLine("Request name " + binder.Name);
+                result = new { Title = "Hello World" };
+                return true;
+            }
+
+
         }
     }
 }
