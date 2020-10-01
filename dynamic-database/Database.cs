@@ -3,14 +3,10 @@ using System.Dynamic;
 using System.Data.SqlClient;
 using System.Data;
 using System.Collections.Generic;
-using System.Text;
-using System.Linq;
-using System.Globalization;
+using System.Data.Common;
 
 namespace dynamic_database
 {
-    // TODO: think how I make it work with any data source easily
-    // TODO: graceful error handling
     public sealed class Database : DynamicObject, IDisposable
     {
         bool _disposed;
@@ -64,143 +60,73 @@ namespace dynamic_database
         {
             SqlConnection _conn;
             string _tableName;
-            DbQuery _query;
 
             public DbTable(SqlConnection conn, string tableName)
             {
                 _conn = conn;
                 _tableName = tableName;
-                _query = new DbQuery();
             }
 
             // TODO: one of the query methods : searchBy, groupBy, between etc should return some new object..
 
             public override bool TryInvokeMember(InvokeMemberBinder binder, object[] args, out object result)
             {
-                // TODO: Create a query parser which will parse query to the query objects (or maybe I can go with expression trees?)
-                // TODO: If I'm going to create query objects, think how to represent them (enum constants, classes etc)
-
-                // TODO: How to represent a result of operation?
-                // 1. I might have a class for each table
-                // 2. I might have a delegate or something to create a result for each table
-                // 3. It might be fully dynamic (result is created fron an anonymous type and client will use it as a dynamic variable)
-
-                result = this;
-
-                if (binder.Name.Equals("execute", StringComparison.OrdinalIgnoreCase))
+                if (IsSearchByQuery(binder.Name))
                 {
-                    SqlDataReader reader = _query.Execute(_tableName, _conn);
-                    result = reader;
+                    result = GetSearchByResult(binder.Name, args);
                     return true;
                 }
 
-                if (!DbQueryParser.Parse(binder.Name, args, _query))
-                {
-                    result = null;
-                    return false;
-                }
-
-                return true;
-            }
-        }
-
-        private class DbQueryParser
-        {
-            static readonly string SearchBy = "searchBy";
-
-            static readonly string QueryNotDefined = null; 
-
-            static ISet<string> _queries = new HashSet<string>
-            {
-                SearchBy
-            };
-
-            public static bool Parse(string queryStr, object[] args, DbQuery query)
-            {
-                string queryMethod = GetQuery(queryStr);
-
-                if (queryMethod == QueryNotDefined)
-                {
-                    return false;
-                }
-                else if (queryMethod == SearchBy)
-                {
-                    return ParseSearchBy(queryStr, args, query);
-                }
-
+                result = null;
                 return false;
             }
 
-            static string GetQuery(string queryStr)
+            private bool IsSearchByQuery(string query)
             {
-                foreach (var query in _queries)
-                {
-                    if (queryStr.StartsWith(query, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return query;
-                    }
-                }
-
-                return QueryNotDefined;
+                return query.StartsWith("searchby", StringComparison.OrdinalIgnoreCase);
             }
 
-            static bool ParseSearchBy(string queryStr, object[] args, DbQuery query)
+            private IEnumerable<dynamic> GetSearchByResult(string searchByQuery, object[] args)
             {
                 if (args.Length != 1)
                 {
-                    return false;
+                    throw new ArgumentException("SearchBy should accept only one argument");
                 }
 
-                string colName = queryStr.Substring(SearchBy.Length);
-                query.AddFilterCriteria(colName, args[0].ToString());
+                string colName = searchByQuery.Substring("searchby".Length);
+                string sql = BuildSql(colName, args[0]);
+                SqlDataReader dataReader = PerformSql(sql);
 
-                return true;
-            }
-        }
-
-        private class DbQuery
-        {
-            private IDictionary<string, string> _filters;
-
-            public DbQuery()
-            {
-                _filters = new Dictionary<string, string>();
+                return ParseReaderResults(dataReader);
             }
 
-            public void AddFilterCriteria(string columnName, string value)
+            private string BuildSql(string colName, object val)
             {
-                _filters.Add(columnName, value);
+                return @$"SELECT * FROM {_tableName} WHERE {colName} = '{val}'";
             }
 
-            public void Reset()
+            private SqlDataReader PerformSql(string sql)
             {
-                _filters.Clear();
+                var command = new SqlCommand(sql, _conn);
+                return command.ExecuteReader();
             }
 
-            public SqlDataReader Execute(string tableName, SqlConnection connection)
+            private IEnumerable<dynamic> ParseReaderResults(SqlDataReader reader)
             {
-                var sql = new SqlCommand(BuildSql(tableName), connection);
-                return sql.ExecuteReader();
-            }
+                IEnumerable<DbColumn> columns = reader.GetColumnSchema();
+                var items = new List<object>();
 
-            private string BuildSql(string tableName)
-            {
-                var sql = new StringBuilder($"SELECT * FROM {tableName} ");
-
-                if (_filters.Any())
+                while (reader.Read())
                 {
-                    sql.Append("WHERE ");
-
-                    foreach (var colName in _filters.Keys)
+                    var item = new ExpandoObject();
+                    foreach (DbColumn col in columns)
                     {
-                        sql.Append($"{colName} = '{_filters[colName]}' AND ");
+                        item.TryAdd(col.ColumnName, reader[col.ColumnName]);
                     }
-
-                    // remove AND_ in the end, where _ is space
-                    sql.Length -= 4; 
+                    items.Add(item);
                 }
 
-                return sql.ToString();
+                return items;
             }
         }
     }

@@ -21,12 +21,12 @@ namespace dynamic_database
             using dynamic db = new Database(connectioString);
             db.Connect();
 
-            dynamic res = db.Books
-                .SearchByPrice(20)
-                .SearchByTitle("C# in Depth")
-                .Execute();
+            dynamic books = db.Books.SearchByAuthor("Jon Skeet");
 
-            Console.WriteLine(res.ToString());
+            foreach (var book in books)
+            {
+                Console.WriteLine(book.title);
+            }
         }
 
         static IConfigurationRoot CreateConfig()
