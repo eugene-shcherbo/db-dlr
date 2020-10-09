@@ -4,6 +4,8 @@ using System.Data.SqlClient;
 using System.Data;
 using System.Collections.Generic;
 using System.Data.Common;
+using System.Threading.Tasks;
+using System.Runtime.CompilerServices;
 
 namespace dynamic_database
 {
@@ -67,13 +69,19 @@ namespace dynamic_database
                 _tableName = tableName;
             }
 
-            // TODO: one of the query methods : searchBy, groupBy, between etc should return some new object..
-
             public override bool TryInvokeMember(InvokeMemberBinder binder, object[] args, out object result)
             {
                 if (IsSearchByQuery(binder.Name))
                 {
-                    result = GetSearchByResult(binder.Name, args);
+                    if (IsAsyncQuery(binder.Name))
+                    {
+                        result = GetSearchByResultsAsync(binder.Name, args);
+                    }
+                    else
+                    {
+                        result = GetSearchByResult(binder.Name, args);
+                    }
+
                     return true;
                 }
 
@@ -86,6 +94,11 @@ namespace dynamic_database
                 return query.StartsWith("searchby", StringComparison.OrdinalIgnoreCase);
             }
 
+            private bool IsAsyncQuery(string query)
+            {
+                return query.EndsWith("async", StringComparison.OrdinalIgnoreCase);
+            }
+
             private IEnumerable<dynamic> GetSearchByResult(string searchByQuery, object[] args)
             {
                 if (args.Length != 1)
@@ -95,9 +108,34 @@ namespace dynamic_database
 
                 string colName = searchByQuery.Substring("searchby".Length);
                 string sql = BuildSql(colName, args[0]);
-                SqlDataReader dataReader = PerformSql(sql);
+
+                SqlDataReader dataReader = PerformSqlAsync(sql)
+                    .GetAwaiter()
+                    .GetResult();
 
                 return ParseReaderResults(dataReader);
+            }
+
+            private Task<IEnumerable<dynamic>> GetSearchByResultsAsync(string searchByQuery, object[] args)
+            {
+                if (args.Length != 1)
+                {
+                    throw new ArgumentException("SearchBy should accept only one argument");
+                }
+
+                return AsyncImplementation();
+
+                async Task<IEnumerable<dynamic>> AsyncImplementation()
+                {
+                    int startColName = "searchby".Length;
+                    int endColName = searchByQuery.IndexOf("async", StringComparison.OrdinalIgnoreCase);
+                    string colName = searchByQuery.Substring(startColName, endColName - startColName);
+                    string sql = BuildSql(colName, args[0]);
+
+                    SqlDataReader dataReader = await PerformSqlAsync(sql);
+
+                    return ParseReaderResults(dataReader);
+                }
             }
 
             private string BuildSql(string colName, object val)
@@ -105,10 +143,10 @@ namespace dynamic_database
                 return @$"SELECT * FROM {_tableName} WHERE {colName} = '{val}'";
             }
 
-            private SqlDataReader PerformSql(string sql)
+            private ConfiguredTaskAwaitable<SqlDataReader> PerformSqlAsync(string sql)
             {
                 var command = new SqlCommand(sql, _conn);
-                return command.ExecuteReader();
+                return command.ExecuteReaderAsync().ConfigureAwait(false);
             }
 
             private IEnumerable<dynamic> ParseReaderResults(SqlDataReader reader)

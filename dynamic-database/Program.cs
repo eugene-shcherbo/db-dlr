@@ -1,13 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 
 namespace dynamic_database
 {
     class Program
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
             IConfigurationRoot config = CreateConfig();
             var connectioString = config.GetValue<string>("ConnectionString");
@@ -21,7 +22,16 @@ namespace dynamic_database
             using dynamic db = new Database(connectioString);
             db.Connect();
 
-            dynamic books = db.Books.SearchByAuthor("Jon Skeet");
+            try
+            {
+                await db.Books.SearchByAuthorAsync("Jon Skeet", "Hello World");
+            }
+            catch (ArgumentException ex)
+            {
+                Console.WriteLine(ex.Message);
+            }
+
+            dynamic books = await db.Books.SearchByAuthorAsync("Jon Skeet");
 
             foreach (var book in books)
             {
